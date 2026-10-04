@@ -27,12 +27,15 @@ const (
 // identity to a client; each connection still receives only the file key that
 // the age protocol requires.
 type SessionServer struct {
-	listener   net.Listener
-	socketPath string
-	capability []byte
-	cache      *SessionCache
-	wg         sync.WaitGroup
-	closeOnce  sync.Once
+	listener    net.Listener
+	socketPath  string
+	capability  []byte
+	cache       *SessionCache
+	mu          sync.Mutex
+	closed      bool
+	connections map[net.Conn]struct{}
+	wg          sync.WaitGroup
+	closeOnce   sync.Once
 }
 
 // NewSessionServer creates a server on socketPath. The socket is restricted to
@@ -74,10 +77,11 @@ func NewSessionServer(socketPath string, capability []byte, cache *SessionCache)
 
 	capabilityCopy := append([]byte(nil), capability...)
 	return &SessionServer{
-		listener:   listener,
-		socketPath: socketPath,
-		capability: capabilityCopy,
-		cache:      cache,
+		listener:    listener,
+		socketPath:  socketPath,
+		capability:  capabilityCopy,
+		cache:       cache,
+		connections: make(map[net.Conn]struct{}),
 	}, nil
 }
 
@@ -100,16 +104,31 @@ func (s *SessionServer) Serve() error {
 			return err
 		}
 
+		// Coordinate registration with Close: a connection accepted just before
+		// shutdown must not add a handler after Close has begun waiting.
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			_ = conn.Close()
+			return nil
+		}
+		s.connections[conn] = struct{}{}
 		s.wg.Add(1)
+		s.mu.Unlock()
 		go func() {
-			defer s.wg.Done()
+			defer func() {
+				s.mu.Lock()
+				delete(s.connections, conn)
+				s.mu.Unlock()
+				s.wg.Done()
+			}()
 			_ = s.serveConnection(conn)
 		}()
 	}
 }
 
-// Close stops accepting connections, waits for active protocol handlers, and
-// clears all cached derived secrets.
+// Close stops accepting connections, disconnects active clients, waits for
+// protocol handlers, and clears all cached derived secrets.
 func (s *SessionServer) Close() error {
 	if s == nil {
 		return nil
@@ -117,7 +136,13 @@ func (s *SessionServer) Close() error {
 
 	var err error
 	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
 		err = s.listener.Close()
+		for conn := range s.connections {
+			_ = conn.Close()
+		}
+		s.mu.Unlock()
 		s.wg.Wait()
 		s.cache.Close()
 		// Keep the path separately: after Close, a net.UnixListener's Addr is
