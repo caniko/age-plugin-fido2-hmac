@@ -48,16 +48,17 @@ jobs:
       run: sudo apt-get install -y libfido2-dev
 
     - name: Test
-      run: go test -v ./...
+      run: go test -race -v ./...
 
     - name: Package
       run: |
         VERSION="$(git describe --tags --always)"
-        go build -ldflags "-X main.Version=$VERSION" -v ./cmd/...
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac ./cmd/age-plugin-fido2-hmac
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac-session ./cmd/age-plugin-fido2-hmac-session
         DIR="$(mktemp -d)"
         mkdir "$DIR/age-plugin-fido2-hmac"
         cp LICENSE "$DIR/age-plugin-fido2-hmac"
-        mv age-plugin-fido2-hmac "$DIR/age-plugin-fido2-hmac"
+        mv age-plugin-fido2-hmac age-plugin-fido2-hmac-session "$DIR/age-plugin-fido2-hmac"
         tar -cvzf "age-plugin-fido2-hmac-$VERSION-linux-amd64.tar.gz" -C "$DIR" age-plugin-fido2-hmac
       env:
         CGO_ENABLED: ${{ env.CGO_ENABLED }}
@@ -93,11 +94,12 @@ jobs:
     - name: Package
       run: |
         VERSION="$(git describe --tags --always)"
-        go build -ldflags "-X main.Version=$VERSION" -v ./cmd/...
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac ./cmd/age-plugin-fido2-hmac
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac-session ./cmd/age-plugin-fido2-hmac-session
         DIR="$(mktemp -d)"
         mkdir "$DIR/age-plugin-fido2-hmac"
         cp LICENSE "$DIR/age-plugin-fido2-hmac"
-        mv age-plugin-fido2-hmac "$DIR/age-plugin-fido2-hmac"
+        mv age-plugin-fido2-hmac age-plugin-fido2-hmac-session "$DIR/age-plugin-fido2-hmac"
         tar -cvzf "age-plugin-fido2-hmac-$VERSION-darwin-arm64.tar.gz" -C "$DIR" age-plugin-fido2-hmac
       env:
         CGO_ENABLED: ${{ env.CGO_ENABLED }}
@@ -133,11 +135,12 @@ jobs:
     - name: Package
       run: |
         VERSION="$(git describe --tags --always)"
-        go build -ldflags "-X main.Version=$VERSION" -v ./cmd/...
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac ./cmd/age-plugin-fido2-hmac
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac-session ./cmd/age-plugin-fido2-hmac-session
         DIR="$(mktemp -d)"
         mkdir "$DIR/age-plugin-fido2-hmac"
         cp LICENSE "$DIR/age-plugin-fido2-hmac"
-        mv age-plugin-fido2-hmac "$DIR/age-plugin-fido2-hmac"
+        mv age-plugin-fido2-hmac age-plugin-fido2-hmac-session "$DIR/age-plugin-fido2-hmac"
         tar -cvzf "age-plugin-fido2-hmac-$VERSION-darwin-amd64.tar.gz" -C "$DIR" age-plugin-fido2-hmac
       env:
         CGO_ENABLED: ${{ env.CGO_ENABLED }}
@@ -173,11 +176,12 @@ jobs:
     - name: Package
       run: |
         $VERSION = git describe --tags --always
-        go build -ldflags "-X main.Version=$VERSION" -v ./cmd/...
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac.exe ./cmd/age-plugin-fido2-hmac
+        go build -ldflags "-X main.Version=$VERSION" -v -o age-plugin-fido2-hmac-session.exe ./cmd/age-plugin-fido2-hmac-session
         $DIR = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemType Directory -Path $_ }
         New-Item -ItemType Directory -Path "$DIR/age-plugin-fido2-hmac"
         Copy-Item LICENSE "$DIR/age-plugin-fido2-hmac/"
-        Move-Item age-plugin-fido2-hmac.exe "$DIR/age-plugin-fido2-hmac/"
+        Move-Item age-plugin-fido2-hmac.exe,age-plugin-fido2-hmac-session.exe "$DIR/age-plugin-fido2-hmac/"
         $OLDDIR = Get-Location
         Set-Location "$DIR"
         Compress-Archive -Path age-plugin-fido2-hmac -DestinationPath age-plugin-fido2-hmac.zip
