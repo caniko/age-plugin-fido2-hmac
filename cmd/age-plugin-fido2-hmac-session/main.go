@@ -13,31 +13,35 @@ import (
 )
 
 func main() {
-	args := os.Args[1:]
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: age-plugin-fido2-hmac-session -- COMMAND [ARGS...]")
-		os.Exit(2)
+		return 2
 	}
 
 	baseDir := os.Getenv("XDG_RUNTIME_DIR")
 	if baseDir == "" {
 		baseDir = os.TempDir()
 	}
-	sessionDir, err := os.MkdirTemp(baseDir, "age-plugin-fido2-hmac-session-")
+	// Keep the private socket path within the shorter Unix socket limit on macOS.
+	sessionDir, err := os.MkdirTemp(baseDir, "age-fido2-")
 	if err != nil {
-		fatal(err)
+		return reportError(err)
 	}
 	defer os.RemoveAll(sessionDir)
 	if err := os.Chmod(sessionDir, 0o700); err != nil {
-		fatal(err)
+		return reportError(err)
 	}
 
 	capability := make([]byte, 32)
 	if _, err := rand.Read(capability); err != nil {
-		fatal(fmt.Errorf("generate session capability: %w", err))
+		return reportError(fmt.Errorf("generate session capability: %w", err))
 	}
 
 	cache := plugin.NewSessionCache()
@@ -45,7 +49,7 @@ func main() {
 
 	server, err := plugin.NewSessionServer(filepath.Join(sessionDir, "session.sock"), capability, cache)
 	if err != nil {
-		fatal(err)
+		return reportError(err)
 	}
 	defer server.Close()
 
@@ -59,16 +63,21 @@ func main() {
 	command.Env = sessionEnvironment(os.Environ(), server, capability)
 
 	if err := command.Start(); err != nil {
-		fatal(fmt.Errorf("start command: %w", err))
+		return reportError(fmt.Errorf("start command: %w", err))
 	}
 
 	signalCh := make(chan os.Signal, 8)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signalCh)
+	signalDone := make(chan struct{})
+	defer close(signalDone)
 	go func() {
-		for sig := range signalCh {
-			if command.Process != nil {
+		for {
+			select {
+			case sig := <-signalCh:
 				_ = command.Process.Signal(sig)
+			case <-signalDone:
+				return
 			}
 		}
 	}()
@@ -84,14 +93,14 @@ func main() {
 	}
 
 	if waitErr == nil {
-		return
+		return 0
 	}
 	if exitErr, ok := waitErr.(*exec.ExitError); ok {
 		if code := exitErr.ProcessState.ExitCode(); code >= 0 {
-			os.Exit(code)
+			return code
 		}
 	}
-	fatal(waitErr)
+	return reportError(waitErr)
 }
 
 func sessionEnvironment(environment []string, server *plugin.SessionServer, capability []byte) []string {
@@ -119,7 +128,7 @@ func serverSocket(server *plugin.SessionServer) string {
 	return server.SocketPath()
 }
 
-func fatal(err error) {
+func reportError(err error) int {
 	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
+	return 1
 }

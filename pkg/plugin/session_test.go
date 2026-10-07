@@ -63,7 +63,13 @@ func TestNewSessionServerRejectsNonSocketPath(t *testing.T) {
 }
 
 func TestSessionServerCloseRemovesSocket(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "session.sock")
+	// t.TempDir includes the test name and can exceed macOS's Unix socket limit.
+	directory, err := os.MkdirTemp("", "fido-session-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(directory) })
+	socketPath := filepath.Join(directory, "session.sock")
 	server, err := NewSessionServer(socketPath, []byte("capability"), NewSessionCache())
 	if err != nil {
 		t.Fatalf("NewSessionServer: %v", err)
